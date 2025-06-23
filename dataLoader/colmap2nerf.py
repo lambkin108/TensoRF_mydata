@@ -64,37 +64,79 @@ def run_ffmpeg(args):
 	if time_slice:
 	    start, end = time_slice.split(",")
 	    time_slice_value = f",select='between(t\,{start}\,{end})'"
-	do_system(f"ffmpeg -i {video} -qscale:v 1 -qmin 1 -vf \"fps={fps}{time_slice_value}\" {images}/%04d.jpg")
+	do_system(f"ffmpeg -i {video} -qscale:v 1 -qmin 1 -vf \"fps={fps}{time_slice_value}\" {images}/%04d.png")
 
 def run_colmap(args):
-	db=args.colmap_db
-	images=args.images
-	db_noext=str(Path(db).with_suffix(""))
+    db = args.colmap_db
+    images = args.images
+    db_noext = str(Path(db).with_suffix(""))
 
-	if args.text=="text":
-		args.text=db_noext+"_text"
-	text=args.text
-	sparse=db_noext+"_sparse"
-	print(f"running colmap with:\n\tdb={db}\n\timages={images}\n\tsparse={sparse}\n\ttext={text}")
-	if (input(f"warning! folders '{sparse}' and '{text}' will be deleted/replaced. continue? (Y/n)").lower().strip()+"y")[:1] != "y":
-		sys.exit(1)
-	if os.path.exists(db):
-		os.remove(db)
-	do_system(f"colmap feature_extractor --ImageReader.camera_model OPENCV --SiftExtraction.estimate_affine_shape=true --SiftExtraction.domain_size_pooling=true --ImageReader.single_camera 1 --database_path {db} --image_path {images}")
-	do_system(f"colmap {args.colmap_matcher}_matcher --SiftMatching.guided_matching=true --database_path {db}")
-	try:
-		shutil.rmtree(sparse)
-	except:
-		pass
-	do_system(f"mkdir {sparse}")
-	do_system(f"colmap mapper --database_path {db} --image_path {images} --output_path {sparse}")
-	do_system(f"colmap bundle_adjuster --input_path {sparse}/0 --output_path {sparse}/0 --BundleAdjustment.refine_principal_point 1")
-	try:
-		shutil.rmtree(text)
-	except:
-		pass
-	do_system(f"mkdir {text}")
-	do_system(f"colmap model_converter --input_path {sparse}/0 --output_path {text} --output_type TXT")
+    # 如果用户没有传 text 参数，则默认命名为 <db>_text
+    if args.text == "text":
+        args.text = db_noext + "_text"
+    text = args.text
+    sparse = db_noext + "_sparse"
+
+    print(f"running colmap with:\n\tdb={db}\n\timages={images}\n\tsparse={sparse}\n\ttext={text}")
+    if (input(f"warning! folders '{sparse}' and '{text}' will be deleted/replaced. continue? (Y/n)").lower().strip() + "y")[:1] != "y":
+        sys.exit(1)
+
+    # 删除已有数据库
+    if os.path.exists(db):
+        os.remove(db)
+
+    # 1) 特征提取：禁用 GPU
+    do_system(
+        f"colmap feature_extractor "
+        f"--ImageReader.camera_model OPENCV "
+        f"--SiftExtraction.estimate_affine_shape=true "
+        f"--SiftExtraction.domain_size_pooling=true "
+        f"--ImageReader.single_camera=1 "
+        f"--SiftExtraction.use_gpu=0 "
+        f"--database_path {db} "
+        f"--image_path {images}"
+    )
+
+    # 2) 特征匹配：穷举 or 顺序匹配，禁用 GPU
+    do_system(
+        f"colmap {args.colmap_matcher}_matcher "
+        f"--SiftMatching.guided_matching=true "
+        f"--SiftMatching.use_gpu=0 "
+        f"--database_path {db}"
+    )
+
+    # 3) 清理并重建稀疏模型
+    try:
+        shutil.rmtree(sparse)
+    except:
+        pass
+    do_system(f"mkdir {sparse}")
+    do_system(
+        f"colmap mapper "
+        f"--database_path {db} "
+        f"--image_path {images} "
+        f"--output_path {sparse}"
+    )
+    do_system(
+        f"colmap bundle_adjuster "
+        f"--input_path {sparse}/0 "
+        f"--output_path {sparse}/0 "
+        f"--BundleAdjustment.refine_principal_point=1"
+    )
+
+    # 4) 导出 TXT 模型
+    try:
+        shutil.rmtree(text)
+    except:
+        pass
+    do_system(f"mkdir {text}")
+    do_system(
+        f"colmap model_converter "
+        f"--input_path {sparse}/0 "
+        f"--output_path {text} "
+        f"--output_type TXT"
+    )
+
 
 def variance_of_laplacian(image):
 	return cv2.Laplacian(image, cv2.CV_64F).var()

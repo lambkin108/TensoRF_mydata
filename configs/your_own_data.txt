@@ -1,7 +1,7 @@
 
-dataset_name = own_data
-datadir = ./data/xxx
-expname =  tensorf_xxx_VM
+dataset_name = blender
+datadir = ./data/mydata
+expname =  tensorf_mydata_VM
 basedir = ./log
 
 n_iters = 30000
